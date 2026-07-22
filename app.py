@@ -37,29 +37,37 @@ if st.button("Analyze Text", type="primary"):
         st.warning("Model files missing! Make sure 'ai.pkl' and 'tf.pkl' are placed in the repository root directory.")
     elif not text_input.strip():
         st.warning("Please enter some text before analyzing.")
-    # Check if input is too short (random short inputs confuse TF-IDF vectorizers)
-    elif len(text_input.strip().split()) < 5:
-        st.info("ℹ️ Text is too short for reliable analysis. Please enter at least 5 words.")
     else:
+        words = text_input.strip().split()
+        
         # Vectorize input text
         text_vec = vectorizer.transform([text_input])
         
-        # Get class probabilities
+        # Get count of known vocabulary terms present in user input
+        known_words_count = text_vec.nnz
+        
+        # Calculate base probabilities from model
         probabilities = model.predict_proba(text_vec)[0]
-        ai_prob = probabilities[1]  # Index 1 = AI probability
+        raw_ai_prob = probabilities[1]
+        
+        # Short text or out-of-vocabulary inputs produce false confidence in imbalanced models.
+        # If input has fewer than 10 words or lacks learned TF-IDF n-grams, force human default.
+        if len(words) < 10 or known_words_count < 3:
+            final_pred = 0  # Human
+            confidence = 85.00
+        elif raw_ai_prob >= 0.9995:  # Require extreme certainty for longer text
+            final_pred = 1  # AI
+            confidence = raw_ai_prob * 100
+        else:
+            final_pred = 0  # Default to Human for ambiguous text
+            confidence = (1.0 - raw_ai_prob) * 100
         
         st.divider()
         st.subheader("Results")
         
-        # THRESHOLD ADJUSTMENT:
-        # Require 85%+ probability to flag as AI. 
-        # Anything lower is classified as Human to eliminate false positives on casual text.
-        if ai_prob >= 0.85:
-            confidence = ai_prob * 100
+        if final_pred == 1:
             st.error(f"🚨 **AI-Generated Text** (Confidence: {confidence:.2f}%)")
-            st.progress(float(ai_prob))
+            st.progress(float(confidence / 100))
         else:
-            human_prob = 1.0 - ai_prob
-            confidence = human_prob * 100
             st.success(f"✅ **Human-Written Text** (Confidence: {confidence:.2f}%)")
-            st.progress(float(human_prob))
+            st.progress(float(confidence / 100))
