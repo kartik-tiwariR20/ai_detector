@@ -23,7 +23,7 @@ try:
     assets_loaded = True
 except Exception as e:
     assets_loaded = False
-    st.error(f"Error loading model files ('ai.pkl' and 'tf.pkl'): {e}")
+    st.error(f"Error loading model files: {e}")
 
 # UI Header
 st.title("🤖 AI vs. Human Text Detector")
@@ -37,22 +37,29 @@ if st.button("Analyze Text", type="primary"):
         st.warning("Model files missing! Make sure 'ai.pkl' and 'tf.pkl' are placed in the repository root directory.")
     elif not text_input.strip():
         st.warning("Please enter some text before analyzing.")
+    # Check if input is too short (random short inputs confuse TF-IDF vectorizers)
+    elif len(text_input.strip().split()) < 5:
+        st.info("ℹ️ Text is too short for reliable analysis. Please enter at least 5 words.")
     else:
         # Vectorize input text
         text_vec = vectorizer.transform([text_input])
         
-        # Make predictions
-        prediction = model.predict(text_vec)[0]
+        # Get class probabilities
         probabilities = model.predict_proba(text_vec)[0]
-        
-        confidence = probabilities[prediction] * 100
+        ai_prob = probabilities[1]  # Index 1 = AI probability
         
         st.divider()
         st.subheader("Results")
         
-        if prediction == 1:
+        # THRESHOLD ADJUSTMENT:
+        # Require 85%+ probability to flag as AI. 
+        # Anything lower is classified as Human to eliminate false positives on casual text.
+        if ai_prob >= 0.85:
+            confidence = ai_prob * 100
             st.error(f"🚨 **AI-Generated Text** (Confidence: {confidence:.2f}%)")
-            st.progress(float(probabilities[1]))
+            st.progress(float(ai_prob))
         else:
+            human_prob = 1.0 - ai_prob
+            confidence = human_prob * 100
             st.success(f"✅ **Human-Written Text** (Confidence: {confidence:.2f}%)")
-            st.progress(float(probabilities[0]))
+            st.progress(float(human_prob))
